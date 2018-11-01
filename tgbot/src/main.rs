@@ -1,19 +1,15 @@
 extern crate evalbotlib as backend;
-extern crate hyper;
-extern crate hyper_tls;
 extern crate serde;
 #[macro_use] extern crate serde_derive;
-extern crate serde_json;
 extern crate toml;
 extern crate futures;
-extern crate string as estring;
+extern crate tokio;
 
 use backend::{EvalSvc, EvalSvcCfg, Response, util};
 
 use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, RwLock};
 
-use hyper::{Body, Method, StatusCode, Server};
 use futures::{Future, Stream};
 
 macro_rules! ignore_req {
@@ -410,16 +406,9 @@ fn respond(resp: Response, bot_id: &str, chat_id: i64, orig_msg_id: i64, is_priv
     };
 }
 
-fn main() {
-    let tgsvc = match TgSvc::init() {
-        Ok(svc) => Arc::new(svc),
-        Err(()) => {
-            println!("TgSvc::init() failed");
-            return;
-        }
-    };
-
-    let server = Server::bind(&([127, 0, 0, 1], 3000).into())
+fn sub_main() -> impl Future {
+    let tgsvc = Arc::new(TgSvc::init().expect("TgSvc::init() failed"));
+    Server::bind(&([127, 0, 0, 1], 3000).into())
         .serve(move || {
             let tgsvc = tgsvc.clone();
             hyper::service::service_fn(move |req: hyper::Request<Body>| {
@@ -455,9 +444,11 @@ fn main() {
                 }
             })
         })
-        .map_err(|e| println!("Hyper error: {}", e));
+        .map_err(|e| println!("Hyper error: {}", e))
+}
 
-    hyper::rt::run(server);
+fn main() {
+    hyper::rt::run(futures::future::lazy(|| sub_main()).map(|_| ()).map_err(|_| ()));
 }
 
 mod tgapi;

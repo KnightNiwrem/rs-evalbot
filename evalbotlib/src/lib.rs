@@ -1,138 +1,65 @@
-#![feature(pattern, fnbox, stmt_expr_attributes)]
-
-extern crate crossbeam;
 extern crate serde;
 #[macro_use] extern crate serde_derive;
+extern crate toml;
 
-use crossbeam::queue::MsQueue;
-use std::boxed::FnBox;
 use std::collections::HashMap;
-use std::sync::Arc;
-use std::thread;
 
-mod eval;
 pub mod util;
 
-pub type CallbackFnBox = Box<FnBox(Response) + Send>;
+fn empty_string() -> String { "".to_owned() }
 
 #[derive(Clone, Serialize, Deserialize, Default, PartialEq, Debug)]
-pub struct EvalSvcCfg {
-    pub timeout: usize,
-    pub eval_threads: usize,
-    pub languages: Vec<LangCfg>
+pub struct EvalService {
+    timeout: usize,
+    languages: HashMap<String, Language>
 }
 
 #[derive(Clone, Serialize, Deserialize, Default, PartialEq, Debug)]
-pub struct LangCfg {
-    pub timeout: Option<usize>,
-    pub timeout_opt: Option<String>,
-    pub name: String,
-    pub code_before: Option<String>,
-    pub code_after: Option<String>,
-    pub binary_path: Option<String>,
-    pub binary_args: Option<Vec<String>>,
-    pub binary_timeout_arg: Option<String>,
-    pub network_address: Option<String>,
-    pub socket_address: Option<String>
+pub struct Language {
+    timeout: Option<usize>,
+    #[serde(skip)]
+    #[serde(default = "empty_string")]
+    name: String,
+    code_before: Option<String>,
+    code_after: Option<String>,
+    #[serde(flatten)]
+    backend: Option<Backend>
 }
 
-unsafe impl Send for EvalSvcCfg {}
-unsafe impl Send for LangCfg {}
-
-pub enum Response {
-    NoSuchLanguage,
-    Error(String),
-    Success(String)
+#[derive(Clone, Serialize, Deserialize, PartialEq, Debug)]
+#[serde(untagged)]
+pub enum Backend {
+    Exec {
+        path: String,
+        args: Vec<String>,
+        timeout_prefix: Option<String>
+    },
+    Network {
+        network_addr: String
+    },
+    UnixSocket {
+        socket_addr: String
+    }
 }
 
-#[derive(Clone)]
-pub struct EvalSvc {
-    queue: Arc<MsQueue<Message>>,
-    languages: Arc<HashMap<String, (Arc<eval::Lang>, LangCfg)>>,
-    threads: usize
-}
-
-enum Message {
-    Request(Arc<eval::Lang>, String, CallbackFnBox, Option<usize>, Option<String>),
-    Terminate
-}
-
-impl EvalSvc {
-    pub fn new(cfg: EvalSvcCfg) -> Self {
-        let timeout = cfg.timeout;
-        let langs = cfg.languages
-            .into_iter()
-            .map(|cfg| LangCfg { timeout: Some(cfg.timeout.unwrap_or(timeout)), ..cfg })
-            .map(|cfg| (cfg.name.clone(), (eval::new(&cfg), cfg)))
-            .collect::<HashMap<_, _>>();
-        let ret = EvalSvc {
-            queue: Arc::new(MsQueue::new()),
-            threads: cfg.eval_threads,
-            languages: Arc::new(langs)
-        };
-        for _ in 0..ret.threads {
-            ret.spawn_thread();
+impl EvalService {
+    fn fixup(mut self) -> Self {
+        for (name, mut lang) in self.languages.iter_mut() {
+            lang.name = name.clone();
         }
-        ret
+        self
     }
 
-    pub fn eval(&self,
-        lang: &str,
-        code: String,
-        with_timeout: bool,
-        context_key: Option<String>,
-        callback: CallbackFnBox) {
-        if let Some(&(ref lang, ref cfg)) = self.languages.get(lang) {
-            self.send_message(Message::Request(lang.clone(),
-                                               wrap_code(&code, cfg),
-                                               callback,
-                                               if with_timeout {
-                                                   Some(cfg.timeout.unwrap())
-                                               } else {
-                                                   None
-                                               },
-                                               context_key));
-        } else {
-            callback(Response::NoSuchLanguage);
-        }
+    pub fn from_toml_file(path: &str) -> Result<Self, String> {
+        util::decode(path).map(EvalService::fixup)
     }
 
-    fn send_message(&self, msg: Message) {
-        self.queue.push(msg);
-    }
-
-    fn spawn_thread(&self) {
-        let queue = self.queue.clone();
-        thread::spawn(move || {
-            worker(queue);
-        });
+    pub fn from_toml(toml: &str) -> Result<Self, String> {
+        toml::from_str(toml).map(EvalService::fixup).map_err(|x| format!("could not parse TOML: {:?}", x))
     }
 }
 
-impl Drop for EvalSvc {
-    fn drop(&mut self) {
-        for _ in 0..self.threads {
-            self.queue.push(Message::Terminate);
-        }
-    }
-}
-
-fn worker(queue: Arc<MsQueue<Message>>) {
-    loop {
-        let msg = queue.pop();
-        match msg {
-            Message::Terminate => break,
-            Message::Request(lang, code, callback, with_timeout, context_key) => {
-                callback(match lang.eval(&code, with_timeout, context_key.as_ref().map(|x| x as &str)) {
-                    Ok(x) => Response::Success(x),
-                    Err(x) => Response::Error(x),
-                });
-            }
-        };
-    }
-}
-
-fn wrap_code(raw: &str, cfg: &LangCfg) -> String {
+fn wrap_code(raw: &str, cfg: &Language) -> String {
     let mut code = String::with_capacity(raw.len());
 
     if let Some(ref prefix) = cfg.code_before {
@@ -146,4 +73,26 @@ fn wrap_code(raw: &str, cfg: &LangCfg) -> String {
     }
 
     code
+}
+
+#[cfg(test)]
+mod test {
+    use toml;
+
+    #[test]
+    fn test_decode() {
+        let toml = r#"
+timeout = 20
+
+[languages.rs]
+path = "rustc"
+args = ["-O"]
+
+[languages.'rs!']
+timeout = 0
+path = "rustc"
+args = ["-O"]
+"#;
+        println!("{:#?}", super::EvalService::from_toml(toml).unwrap());
+    }
 }
