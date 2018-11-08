@@ -1,10 +1,17 @@
 extern crate serde;
 #[macro_use] extern crate serde_derive;
 extern crate toml;
+extern crate tokio;
+extern crate tokio_process;
+extern crate tokio_io;
+extern crate futures;
 
 use std::collections::HashMap;
+use futures::Future;
+use futures::future::Either;
 
 pub mod util;
+mod eval;
 
 fn empty_string() -> String { "".to_owned() }
 
@@ -14,7 +21,7 @@ pub struct EvalService {
     languages: HashMap<String, Language>
 }
 
-#[derive(Clone, Serialize, Deserialize, Default, PartialEq, Debug)]
+#[derive(Clone, Serialize, Deserialize, PartialEq, Debug)]
 pub struct Language {
     timeout: Option<usize>,
     #[serde(skip)]
@@ -23,7 +30,7 @@ pub struct Language {
     code_before: Option<String>,
     code_after: Option<String>,
     #[serde(flatten)]
-    backend: Option<Backend>
+    backend: Backend
 }
 
 #[derive(Clone, Serialize, Deserialize, PartialEq, Debug)]
@@ -46,6 +53,7 @@ impl EvalService {
     fn fixup(mut self) -> Self {
         for (name, mut lang) in self.languages.iter_mut() {
             lang.name = name.clone();
+            lang.timeout = lang.timeout.or(Some(self.timeout));
         }
         self
     }
@@ -56,6 +64,26 @@ impl EvalService {
 
     pub fn from_toml(toml: &str) -> Result<Self, String> {
         toml::from_str(toml).map(EvalService::fixup).map_err(|x| format!("could not parse TOML: {:?}", x))
+    }
+
+    pub fn get(&self, lang: &str) -> Option<&Language> {
+        self.languages.get(lang)
+    }
+}
+
+static EMPTY_U8: [u8; 0] = [];
+
+impl Language {
+    pub fn eval<'a>(&'a self, code: &'a str, timeout: Option<usize>) -> impl Future<Item = String, Error = String> + 'a {
+        match self.backend {
+            Backend::Exec { ref path, ref args, ref timeout_prefix } =>
+                Either::A(eval::exec(&path, args, timeout.or(self.timeout),
+                    timeout_prefix.as_ref().map(String::as_str),
+                    self.code_before.as_ref().map(String::as_bytes).unwrap_or(&EMPTY_U8),
+                    self.code_after.as_ref().map(String::as_bytes).unwrap_or(&EMPTY_U8),
+                    code.as_bytes())),
+            _ => Either::B(futures::finished("Unimplemented".to_owned()))
+        }
     }
 }
 
