@@ -6,7 +6,7 @@ use serde::{Serialize, de::DeserializeOwned};
 use std::path::Path;
 use std::fmt::Display;
 
-pub fn encode<P, T>(obj: &T, name: P) -> impl Future<Item = (), Error = String>
+pub fn encode<T, P>(obj: &T, name: P) -> impl Future<Item = (), Error = String>
     where
         P: AsRef<Path> + Send + Display + 'static,
         T: Serialize {
@@ -19,7 +19,7 @@ pub fn encode<P, T>(obj: &T, name: P) -> impl Future<Item = (), Error = String>
         .map(|_| ())
 }
 
-pub fn decode<P, T>(name: P) -> impl Future<Item = T, Error = String>
+pub fn decode<T, P>(name: P) -> impl Future<Item = T, Error = String>
     where
         P: AsRef<Path> + Send + Display + 'static,
         T: DeserializeOwned {
