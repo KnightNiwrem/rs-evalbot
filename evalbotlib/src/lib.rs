@@ -51,9 +51,10 @@ pub enum Backend {
 
 impl EvalService {
     fn fixup(mut self) -> Self {
+        let timeout = self.timeout;
         for (name, mut lang) in self.languages.iter_mut() {
             lang.name = name.clone();
-            lang.timeout = lang.timeout.or(Some(self.timeout));
+            lang.timeout = lang.timeout.or_else(|| Some(timeout));
         }
         self
     }

@@ -9,29 +9,26 @@ use std::io::Write;
 
 pub fn exec<'a, I, S, T>(
     path: &str,
-    args: I,
+    args: &I,
     timeout: Option<usize>,
     timeout_prefix: Option<&str>,
     code_before: T,
     code_after: T,
     code: T) -> impl Future<Item = String, Error = String> + 'a
         where
-            I: IntoIterator<Item = S>,
+            for<'b> &'b I: IntoIterator<Item = &'b S>,
             S: AsRef<str> + PartialEq + 'a,
             T: AsRef<[u8]> + 'a {
     let timeout_arg = timeout
         .map(|t| format!("{}{}", timeout_prefix.unwrap_or(""), t));
-    {
-        let mut cmd = Command::new(path);
-        for arg in args {
-            if arg.as_ref() == "{TIMEOUT}" && timeout_arg.is_some() {
-                cmd.arg(timeout_arg.as_ref().expect("is_some was true"));
+    let timeout_arg_ref = timeout_arg.as_ref().map(String::as_str);
+    Command::new(path)
+        .args(args.into_iter()
+            .filter_map(|a| if a.as_ref() == "{TIMEOUT}" {
+                timeout_arg_ref
             } else {
-                cmd.arg(arg.as_ref());
-            }
-        }
-        cmd
-    }
+                Some(a.as_ref())
+            }))
         .stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::piped())
         .spawn_async()
         .map_err(|e| format!("failed to exec: {}", e))
