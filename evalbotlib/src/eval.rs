@@ -4,7 +4,7 @@ use std::ffi::{OsStr, OsString};
 use futures::Future;
 use futures::future::IntoFuture;
 use tokio_process::{CommandExt, Child};
-use tokio_io::io::write_all;
+use tokio::io::write_all;
 use std::io::Write;
 
 pub fn exec<'a, I, S, T>(

@@ -3,12 +3,13 @@ extern crate serde;
 extern crate toml;
 extern crate tokio;
 extern crate tokio_process;
-extern crate tokio_io;
 extern crate futures;
 
 use std::collections::HashMap;
 use futures::Future;
 use futures::future::Either;
+use std::path::Path;
+use std::fmt::Display;
 
 pub mod util;
 mod eval;
@@ -59,7 +60,8 @@ impl EvalService {
         self
     }
 
-    pub fn from_toml_file(path: &str) -> Result<Self, String> {
+    pub fn from_toml_file<P>(path: P) -> impl Future<Item = Self, Error = String>
+        where P: AsRef<Path> + Send + Display + 'static{
         util::decode(path).map(EvalService::fixup)
     }
 
