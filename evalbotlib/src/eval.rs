@@ -12,12 +12,10 @@ pub fn exec<'a, I, S, T>(
     args: &I,
     timeout: Option<usize>,
     timeout_prefix: Option<&str>,
-    code_before: T,
-    code_after: T,
     code: T) -> impl Future<Item = String, Error = String> + 'a
         where
             for<'b> &'b I: IntoIterator<Item = &'b S>,
-            S: AsRef<str> + PartialEq + 'a,
+            S: AsRef<str> + PartialEq,
             T: AsRef<[u8]> + 'a {
     let timeout_arg = timeout
         .map(|t| format!("{}{}", timeout_prefix.unwrap_or(""), t));
@@ -36,13 +34,7 @@ pub fn exec<'a, I, S, T>(
         .and_then(|mut child| {
             child.stdin().take().ok_or_else(|| "stdin missing".to_owned()).into_future()
                 .and_then(|stdin|
-                    write_all(stdin, code_before)
-                        .and_then(|(stdin, _)|
-                            write_all(stdin, code)
-                        )
-                        .and_then(|(stdin, _)|
-                            write_all(stdin, code_after)
-                        )
+                    write_all(stdin, code)
                         .map_err(|e| format!("failed to write to stdin: {}", e))
                 )
                 .and_then(|_| child.wait_with_output()
