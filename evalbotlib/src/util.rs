@@ -6,7 +6,7 @@ use serde::{Serialize, de::DeserializeOwned};
 use std::path::Path;
 use std::fmt::Display;
 
-pub fn encode<T, P>(obj: &T, name: P) -> impl Future<Item = (), Error = String>
+pub fn encode<'a, 'b, T, P>(obj: &'a T, name: P) -> impl Future<Item = (), Error = String> + 'b
     where
         P: AsRef<Path> + Send + Display + 'static,
         T: Serialize {

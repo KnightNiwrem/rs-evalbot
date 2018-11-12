@@ -20,15 +20,16 @@ pub fn exec<'a, I, S, T>(
     let timeout_arg = timeout
         .map(|t| format!("{}{}", timeout_prefix.unwrap_or(""), t));
     let timeout_arg_ref = timeout_arg.as_ref().map(String::as_str);
-    Command::new(path)
-        .args(args.into_iter()
+    let mut cmd = Command::new(path);
+    cmd.args(args.into_iter()
             .filter_map(|a| if a.as_ref() == "{TIMEOUT}" {
                 timeout_arg_ref
             } else {
                 Some(a.as_ref())
             }))
-        .stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::piped())
-        .spawn_async()
+        .stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::piped());
+    debug!("spawning {:?}", cmd);
+    cmd.spawn_async()
         .map_err(|e| format!("failed to exec: {}", e))
         .into_future()
         .and_then(|mut child| {

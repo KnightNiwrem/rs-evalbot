@@ -18,20 +18,20 @@ pacstrap -c -d $dir \
 mkdir $dir/dev/shm
 mknod -m 666 $dir/dev/null c 1 3
 mknod -m 644 $dir/dev/urandom c 1 9
-arch-chroot $dir groupadd -g 1001 eval
-arch-chroot $dir useradd -m -u 1001 -g 1001 eval
+arch-chroot $dir groupadd -g 717 eval
+arch-chroot $dir useradd -m -u 717 -g 717 eval
 
 rm -rf $dir/usr
 rm -rf $dir/var
 # mono has some configuration files (importantly, dllmaps)
-cp -R /etc/mono $dir/etc/mono
+# cp -R /etc/mono $dir/etc/mono
 
 # you may want to consider copying any java files too, if needed
 # cp -R /etc/java-jre8 $dir/etc/java-jre8
 
 mkdir $dir/usr $dir/var
 mkdir $dir/run/eval
-chown 1001:1001 $dir/run/eval
+chown 717:717 $dir/run/eval
 
 mksquashfs $dir playpen.sqfs
 umount $dir

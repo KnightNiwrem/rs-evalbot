@@ -97,6 +97,7 @@ static EMPTY_U8: [u8; 0] = [];
 impl Language {
     pub fn eval<T>(&self, code: T, timeout: Option<usize>) -> impl Future<Item = String, Error = String>
         where T: AsRef<str> {
+        info!("evaluating {}: \"{}\"", self.name, code.as_ref());
         match self.backend {
             Backend::Exec { ref path, ref args, ref timeout_prefix } =>
                 Either::A(eval::exec(&path, args, timeout.or(self.timeout),
